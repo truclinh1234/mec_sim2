@@ -4,8 +4,8 @@ NUM_USERS = 6
 
 # Mỗi dict là 1 edge server: id, cpu_freq (Hz), queue_capacity (0 = unlimited)
 EDGE_SERVERS = [
-    {"id": 0, "cpu_freq": 3e9, "queue_capacity": 0, "label": "Edge-1 (3GHz)"},
-    {"id": 1, "cpu_freq": 3e9, "queue_capacity": 0, "label": "Edge-2 (3GHz)"},
+    {"id": 0, "cpu_freq": 3e9, "queue_capacity": 50, "label": "Edge-1 (3GHz)"},
+    {"id": 1, "cpu_freq": 3e9, "queue_capacity": 50, "label": "Edge-2 (3GHz)"},
 ]
 
 # CPU tần số của user device (Hz)
@@ -25,7 +25,7 @@ TASK_TYPES = [
 
 # ── NETWORK ───────────────────────────────────────────────────────────────────
 # Tốc độ kênh truyền từ user lên edge (bits/s)
-CHANNEL_RATE_BPS = 10e6  # 10 Mbps — tổng băng thông kênh
+CHANNEL_RATE_BPS = 100e6  # 10 Mbps — tổng băng thông kênh
 
 # Channel model: 'shared' | 'fixed'
 #   shared — chia đều băng thông cho số user offload cùng lúc (thực tế hơn)
@@ -37,7 +37,7 @@ PROPAGATION_DELAY = 0.002  # 2 ms
 
 # ── SIMULATION ────────────────────────────────────────────────────────────────
 SIM_DURATION = 60.0    # Tổng thời gian mô phỏng (giây)
-DT           = 0.01    # Time step (giây)
+DT           = 0.001    # Time step (giây)
 RANDOM_SEED  = 42      # Seed cho tái lập kết quả
 
 # ── METRICS ───────────────────────────────────────────────────────────────────

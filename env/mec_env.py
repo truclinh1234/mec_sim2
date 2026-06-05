@@ -29,7 +29,8 @@ class MecEnv:
         (edge_id, ratio)   → partial: ratio∈(0,1), ratio% lên edge, còn lại local
     """
 
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, seed: Optional[int] = None, enable_interference: bool = True):
+        self.enable_interference = enable_interference  # Thêm dòng này làm công tắc
         _seed = seed if seed is not None else cfg.RANDOM_SEED
         self._rng = np.random.default_rng(_seed)
         self.users: List[UserDevice] = []
@@ -40,23 +41,23 @@ class MecEnv:
         self._pending:       List[Task] = []
         
         # ── NẠP SẴN 4 MA TRẬN NHIỄU (PRELOAD INTERFERENCE MATRICES) ──
-        self.interference_matrices = {}
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        apps = ['lightgbm', 'mapreduce', 'matrix_app', 'video_app']
+        # self.interference_matrices = {}
+        # base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # apps = ['lightgbm', 'mapreduce', 'matrix_app', 'video_app']
         
-        print("Đang nạp ma trận nhiễu từ profile_data...")
-        for app in apps:
-            excel_path = os.path.join(base_dir, 'profile_data', f"{app}_mc.xlsx")
-            if os.path.exists(excel_path):
-                try:
-                    m_matrix = pd.read_excel(excel_path, engine='openpyxl', sheet_name='edm').values
-                    c_matrix = pd.read_excel(excel_path, engine='openpyxl', sheet_name='edc').values
-                    self.interference_matrices[app] = {'m': m_matrix, 'c': c_matrix}
-                    print(f" - Đã nạp ma trận cho: {app}")
-                except Exception as e:
-                    print(f" - Lỗi khi nạp {app}_mc.xlsx: {e}")
-            else:
-                print(f" - Cảnh báo: Không tìm thấy file {app}_mc.xlsx")
+        # # print("Đang nạp ma trận nhiễu từ profile_data...")
+        # for app in apps:
+        #     excel_path = os.path.join(base_dir, 'profile_data', f"{app}_mc.xlsx")
+        #     if os.path.exists(excel_path):
+        #         try:
+        #             m_matrix = pd.read_excel(excel_path, engine='openpyxl', sheet_name='edm').values
+        #             c_matrix = pd.read_excel(excel_path, engine='openpyxl', sheet_name='edc').values
+        #             self.interference_matrices[app] = {'m': m_matrix, 'c': c_matrix}
+        #             # print(f" - Đã nạp ma trận cho: {app}")
+        #         except Exception as e:
+        #             pass # print(f" - Lỗi khi nạp {app}_mc.xlsx: {e}")
+        #     else:
+        #             pass# print(f" - Cảnh báo: Không tìm thấy file {app}_mc.xlsx")
         
         self.reset()
 
@@ -228,18 +229,20 @@ class MecEnv:
         penalty_time = 0.0                       # Thời gian phạt do chạy nền
         
         app_name = getattr(task, 'app_type', None) 
-        
-        if app_name and app_name in self.interference_matrices:
-            m_matrix = self.interference_matrices[app_name]['m']
-            c_matrix = self.interference_matrices[app_name]['c']
-            
-            m_factor = abs(m_matrix[edge_id % len(m_matrix)].mean())/1000.0
-            c_factor = abs(c_matrix[edge_id % len(c_matrix)].mean())/1000.0
-            
-            # Penalty = Hằng số overhead + (Hệ số đồng thời * Số task)
-            penalty_time = c_factor + (m_factor * num_concurrent) 
+        if self.enable_interference:  # THÊM IF NÀY
+            if app_name and app_name in self.interference_matrices:
+                m_matrix = self.interference_matrices[app_name]['m']
+                c_matrix = self.interference_matrices[app_name]['c']
+                
+                m_factor = abs(m_matrix[edge_id % len(m_matrix)].mean())/1000.0
+                c_factor = abs(c_matrix[edge_id % len(c_matrix)].mean())/1000.0
+                
+                # Penalty = Hằng số overhead + (Hệ số đồng thời * Số task)
+                penalty_time = c_factor + (m_factor * num_concurrent) 
+            else:
+                penalty_time = 0.05 * num_concurrent 
         else:
-            penalty_time = 0.05 * num_concurrent 
+            penalty_time = 0.0  # <--- NẾU TẮT CÔNG TẮC THÌ NHIỄU = 0
             
         predicted_exec_time = base_time + penalty_time
         adjusted_cycles = predicted_exec_time * edge.cpu_freq
@@ -252,9 +255,28 @@ class MecEnv:
         task.channel_rate     = rate
         task.cycles_local     = 0.0
         task.cycles_edge      = adjusted_cycles  
-        user.offloaded_count += 1
-        edge.receive_offloaded_task(task, self.sim_time)
-
+        
+        # --- FALLBACK CHẠY LOCAL KHI EDGE ĐẦY HÀNG ĐỢI ---
+        success = edge.receive_offloaded_task(task, self.sim_time)
+        if success:
+            user.offloaded_count += 1
+        else:
+            task.is_fallback = True 
+            # Edge đầy -> Fallback: reset lại các thông số mạng và nạp vào Local Queue
+            task.offloaded    = False
+            task.split_ratio  = 0.0
+            task.edge_id      = None
+            task.tx_delay     = 0.0
+            task.channel_rate = 0.0
+            # SỬ DỤNG LẠI CYCLES GỐC ĐỂ XỬ LÝ LOCAL
+            # Lấy cycles gốc từ file JSON thay vì cycles ảo bị cộng trễ nhiễu của Edge
+            task.cycles_local = task.cycles 
+            task.cycles_edge  = 0.0
+            task.queue_start  = self.sim_time
+            
+            user.local_count += 1
+            user.enqueue(task, self.sim_time)
+        # -------------------------------------------------
     def _route_partial(self, task: Task, user: UserDevice,
                        edge_id: int, ratio: float, num_concurrent: int):
         """
@@ -271,17 +293,18 @@ class MecEnv:
         
         app_name = getattr(task, 'app_type', None) 
         penalty_time = 0.0
-        
-        if app_name and app_name in self.interference_matrices:
-            m_matrix = self.interference_matrices[app_name]['m']
-            c_matrix = self.interference_matrices[app_name]['c']
-            
-            m_factor = abs(m_matrix[edge_id % len(m_matrix)].mean())/1000.0
-            c_factor = abs(c_matrix[edge_id % len(c_matrix)].mean())/1000.0
-            penalty_time = c_factor + (m_factor * num_concurrent)
+        if self.enable_interference:
+            if app_name and app_name in self.interference_matrices:
+                m_matrix = self.interference_matrices[app_name]['m']
+                c_matrix = self.interference_matrices[app_name]['c']
+                
+                m_factor = abs(m_matrix[edge_id % len(m_matrix)].mean())/1000.0
+                c_factor = abs(c_matrix[edge_id % len(c_matrix)].mean())/1000.0
+                penalty_time = c_factor + (m_factor * num_concurrent)
+            else:
+                penalty_time = 0.05 * num_concurrent
         else:
-            penalty_time = 0.05 * num_concurrent
-            
+            penalty_time = 0.0   
         adjusted_edge_cycles = (base_edge_time + penalty_time) * edge.cpu_freq
         # ──────────────────────────────────────────────────────────────
 
@@ -300,7 +323,7 @@ class MecEnv:
         # Edge part → edge tx_buffer
         edge.receive_offloaded_task(task, self.sim_time)
 
-    # ── Completion handlers ──────────────────────────────────────────────────
+        # ── Completion handlers ──────────────────────────────────────────────────
 
     def _on_local_part_done(self, task: Task):
         """Gọi khi user CPU xử lý xong local part."""
@@ -310,16 +333,16 @@ class MecEnv:
             if task.done_edge and not task.done:
                 task.done = True
                 self.finished_tasks.append(task)
-                if task.job_id == 1:
-                    print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Partial) lúc {self.sim_time:.3f}s")
+                # if task.job_id == 1:
+                #     print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Partial) lúc {self.sim_time:.3f}s")
                     
         elif not task.offloaded:
             if not task.done:
-                if task.cycles > 0:
+                if task.cycles >= 0:
                     task.done = True
                     self.finished_tasks.append(task)
-                    if task.job_id == 1:
-                        print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Local) lúc {self.sim_time:.3f}s")
+                    # if task.job_id == 1:
+                    #     print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Local) lúc {self.sim_time:.3f}s")
 
     def _on_edge_part_done(self, task: Task):
         """Gọi khi edge CPU xử lý xong edge part."""
@@ -329,16 +352,15 @@ class MecEnv:
             if task.done_local and not task.done:
                 task.done = True
                 self.finished_tasks.append(task)
-                if task.job_id == 1:
-                    print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Partial) lúc {self.sim_time:.3f}s")
+                # if task.job_id == 1:
+                #     print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Partial) lúc {self.sim_time:.3f}s")
                     
         elif task.offloaded:
             if not task.done:
                 task.done = True
                 self.finished_tasks.append(task)
-                if task.job_id == 1:
-                    print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Edge) lúc {self.sim_time:.3f}s")
-
+                # if task.job_id == 1:
+                #     print(f"[DAG {task.app_type}] Task {task.dag_name} làm xong (Edge) lúc {self.sim_time:.3f}s")
     def _stats_by_type(self, tasks):
         result = {}
         for tt in cfg.TASK_TYPES:

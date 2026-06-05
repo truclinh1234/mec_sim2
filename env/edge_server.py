@@ -1,5 +1,5 @@
 # =============================================================================
-# env/edge_server.py — Edge Server
+# env/edge_server.py — Edge Server (Cập Nhật Mạng Động + Chống Deadlock)
 # =============================================================================
 from __future__ import annotations
 from collections import deque
@@ -40,8 +40,12 @@ class EdgeServer(QueueNode):
     def receive_offloaded_task(self, task: Task, current_time: float) -> bool:
         """
         Nhận task offload từ User.
-        Task vào tx_buffer — đang bay trên kênh, chưa chạm CPU queue.
+        Trả về True nếu nhận thành công, False nếu hàng đợi (bao gồm tx_buffer) đã đầy.
         """
+        # Nếu hàng đợi giới hạn (queue_capacity > 0) và tổng tải vượt quá dung lượng máy chủ
+        if self.queue_capacity > 0 and self.total_load >= self.queue_capacity:
+            return False  # Từ chối sớm (Early Reject) để tránh deadlock và lãng phí mạng
+        
         task.tx_start_time = current_time   # lúc bắt đầu truyền
         self.tx_buffer.append(task)
         return True
@@ -49,26 +53,52 @@ class EdgeServer(QueueNode):
     def step(self, dt: float, current_time: float) -> List[Task]:
         """
         Mỗi bước:
-          1. Flush tx_buffer → cpu queue (task truyền xong)
+          1. Flush tx_buffer → cpu queue (Cập nhật mạng động tại mỗi step)
           2. While loop vắt kiệt cycles trong dt:
              task xong sớm → dùng cycles dư chạy task tiếp luôn
         """
         finished: List[Task] = []
 
-        # ── Bước 1: flush tx_buffer → cpu queue ──────────────────────────────
+        # ── BƯỚC 1: CẬP NHẬT MẠNG ĐỘNG (DYNAMIC NETWORK UPDATE) ──
         still_tx = deque()
+        active_tx = len(self.tx_buffer)
+        
+        # Tính toán tốc độ mạng hiệu dụng tại Step này dựa trên số task thực tế đang bay
+        if cfg.CHANNEL_MODEL == 'shared' and active_tx > 0:
+            current_rate = cfg.CHANNEL_RATE_BPS / active_tx
+        else:
+            current_rate = cfg.CHANNEL_RATE_BPS  # Fixed channel
+            
         for task in self.tx_buffer:
-            if task.tx_start_time + task.tx_delay <= current_time:
+            # Khởi tạo số bits còn lại cần truyền nếu chưa có (lần đầu vào tx_buffer)
+            if not hasattr(task, 'input_bits_left'):
+                ratio = getattr(task, 'split_ratio', 1.0)
+                task.input_bits_left = task.input_bits * ratio
+                
+            # Trừ bớt lượng bits đã truyền được trong dt giây
+            bits_sent = current_rate * dt
+            task.input_bits_left -= bits_sent
+            
+            # Nếu đã truyền xong toàn bộ dữ liệu
+            if task.input_bits_left <= 0:
                 if self.queue_capacity == 0 or len(self.queue) < self.queue_capacity:
                     task.queue_start = current_time  # thực sự vào hàng đợi CPU
+                    
+                    # Ghi nhận thời gian truyền mạng thực tế chuẩn xác dựa trên thời gian bay động
+                    task.tx_delay = current_time - task.tx_start_time
+                    
                     self.queue.append(task)
                 else:
-                    self.total_dropped += 1          # CPU queue đầy mới drop
+                    self.total_dropped += 1  # CPU queue đầy mới drop
+                    task.is_fallback = True               
+                    task.finish_time_edge = current_time 
+                    task.finish_time = current_time  
+                    finished.append(task)                 # Ném task ra ngoài để gọi hàm update() phạt AI
             else:
                 still_tx.append(task)
         self.tx_buffer = still_tx
 
-        # ── Bước 2: while loop — 
+        # ── BƯỚC 2: XỬ LÝ CPU TUẦN TỰ (FCFS CPU) ──
         cycles_left = self.cpu_freq * dt
 
         while cycles_left > 0:
@@ -78,7 +108,7 @@ class EdgeServer(QueueNode):
                     task.edge_proc_start = current_time
                     self.proc = task
                     # Partial task chỉ xử lý cycles_edge
-                    self.rem = task.cycles_edge if task.is_partial else task.cycles
+                    self.rem = task.cycles_edge
                 else:
                     break
 

@@ -27,18 +27,25 @@ class DAGParser:
         name_to_id: Dict[str, int] = {}
         
         # 1. Parse các Vertices để tạo danh sách Task
+                # 1. Parse các Vertices để tạo danh sách Task
         for v in vertices_data:
             v_name = v["name"]
             
-            # Trích xuất dữ liệu dựa theo format của bài báo
-            # file: ["name", size_cycles]
-            cycles = float(v.get("file", ["NULL", 0])[1])
+            # Trích xuất kích thước file code/dữ liệu đầu vào (KB)
+            file_size_kb = float(v.get("file", ["NULL", 0])[1])
             
-            # model: ["name", size]
+            # Trích xuất kích thước model (KB)
             model_size = float(v.get("model", ["NULL", 0])[1])
             
-            # Nhân với 8000 để quy đổi từ KB sang Bits (Giả sử file size đang ở đơn vị KB)
-            input_bits = (cycles + model_size) * 8000 
+            # --- SỬA LỖI 1 TẠI ĐÂY ---
+            # 1. Tính toán cycles thực tế (Khối lượng tính toán)
+            # Nhân với 1e6 (1 triệu chu kỳ CPU cho mỗi KB dữ liệu đầu vào)
+            cycles = file_size_kb * 1e6 
+            
+            # 2. Tính toán input_bits thực tế (Dung lượng truyền tải mạng)
+            # Giữ nguyên việc dùng file_size_kb (không dùng biến cycles khổng lồ ở trên)
+            input_bits = (file_size_kb + model_size) * 8000 
+            # -------------------------
         
             # Khởi tạo Task
             task = Task(

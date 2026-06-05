@@ -84,7 +84,7 @@ class MetricsCollector:
             writer = csv.DictWriter(f, fieldnames=self.timeseries[0].keys())
             writer.writeheader()
             writer.writerows(self.timeseries)
-        print(f"  [metrics] timeseries → {path}")
+        #print(f"  [metrics] timeseries → {path}")
 
     def save_tasks(self):
         """Xuất CSV từng task."""
@@ -95,14 +95,14 @@ class MetricsCollector:
             writer = csv.DictWriter(f, fieldnames=self.task_records[0].keys())
             writer.writeheader()
             writer.writerows(self.task_records)
-        print(f"  [metrics] tasks      → {path}")
+        #print(f"  [metrics] tasks      → {path}")
 
     def save_summary(self, summary: dict):
         """Xuất JSON tổng kết."""
         path = os.path.join(self.output_dir, f"{self.run_name}_summary.json")
         with open(path, "w") as f:
             json.dump(summary, f, indent=2)
-        print(f"  [metrics] summary    → {path}")
+        #print(f"  [metrics] summary    → {path}")
 
     def save_all(self, summary: dict):
         self.save_timeseries()

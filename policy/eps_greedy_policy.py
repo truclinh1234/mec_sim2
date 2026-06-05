@@ -46,7 +46,11 @@ class EpsGreedyPolicy(BasePolicy):
     """
 
     name = "EpsGreedy"
-    FEATURE_DIM = 5
+    
+    # -------------------------------------------------------------
+    # SỬA LỖI TẠI ĐÂY: Tăng lên 6 vì thêm 1 hệ số tự do (Bias)
+    # -------------------------------------------------------------
+    FEATURE_DIM = 6
 
     def __init__(
         self,
@@ -87,10 +91,26 @@ class EpsGreedyPolicy(BasePolicy):
             return
 
         arm_key, phi = self._pending.pop(task.task_id)
-        reward = max(-1.0, 1.0 - task.latency / self.deadline)
+        # 1. Báo cáo Tốt (Xong DAG) và Xấu (Kẹt xe)
+        is_last_task = (task.job_id is not None) and (len(task.successors) == 0)
+        fallback_happened = getattr(task, 'is_fallback', False)
+        
+        # 1. Kiểm tra xem đây có phải là Task cuối cùng của DAG không
+        is_last_task = (task.job_id is not None) and (len(task.successors) == 0)
+        
+        # 2. tính điểm Trễ
+        reward_latency = 1.0 - (task.latency / self.deadline)
+        
+        # 3. Thêm Bonus nếu là task cuối DAG
+        reward_bonus = 10.0 if is_last_task else 0.0
+        
+        reward_penalty = -10.0 if fallback_happened else 0.0
+        # 4. reward tổng
+        reward = reward_latency + reward_bonus + reward_penalty 
 
         if arm_key in self._arms:
             self._arms[arm_key].update(phi, reward)
+
 
     def _init_arms_if_needed(self, obs: dict):
         if self._arms:
@@ -105,7 +125,6 @@ class EpsGreedyPolicy(BasePolicy):
     def _build_context(
         self, task: "Task", user_obs: dict, obs: dict,
     ) -> Dict["str | int", np.ndarray]:
-        # Khớp 100% với ucb_policy.py của bạn
         local_load = user_obs.get("load", 0)
         cycles_norm = task.cycles / 1e9
 
@@ -116,7 +135,10 @@ class EpsGreedyPolicy(BasePolicy):
         local_cpu_norm = cfg.USER_CPU_FREQ / max_freq
         phi_map: Dict[str | int, np.ndarray] = {}
 
-        phi_map["local"] = np.array([local_load / 10.0, 0.0, local_cpu_norm, cycles_norm, 0.0], dtype=float)
+        # -------------------------------------------------------------
+        # SỬA LỖI TẠI ĐÂY: Thêm số 1.0 vào cuối mảng (Hệ số Bias)
+        # -------------------------------------------------------------
+        phi_map["local"] = np.array([local_load / 10.0, 0.0, local_cpu_norm, cycles_norm, 0.0, 1.0], dtype=float)
 
         
         DEFAULT_RATE = 20e6
@@ -128,8 +150,11 @@ class EpsGreedyPolicy(BasePolicy):
             rate = e.get("channel_rate", DEFAULT_RATE) or DEFAULT_RATE
             tx_est = task.input_bits / rate
 
+            # -------------------------------------------------------------
+            # SỬA LỖI TẠI ĐÂY: Thêm số 1.0 vào cuối mảng (Hệ số Bias)
+            # -------------------------------------------------------------
             phi_map[eid] = np.array([
-                local_load / 10.0, edge_queue / 10.0, cpu_freq / max_freq, cycles_norm, min(tx_est, 1.0)
+                local_load / 10.0, edge_queue / 10.0, cpu_freq / max_freq, cycles_norm, min(tx_est, 1.0), 1.0
             ], dtype=float)
 
         return phi_map

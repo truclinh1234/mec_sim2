@@ -1,0 +1,35 @@
+{
+  "total_done": 81,
+  "total_generated": 84,
+  "offload_ratio": 0.0,
+  "latency_all_ms": {
+    "mean": 2454.99,
+    "p50": 2000.0,
+    "p95": 3857.0,
+    "min": 2000.0,
+    "max": 4571.0
+  },
+  "latency_local_ms": {
+    "mean": 2454.99,
+    "p50": 2000.0,
+    "p95": 3857.0,
+    "min": 2000.0,
+    "max": 4571.0
+  },
+  "latency_edge_ms": {},
+  "latency_partial_ms": {},
+  "by_type": {
+    "null": {
+      "task_count": 81,
+      "offload_ratio": 0.0,
+      "latency_ms": {
+        "mean": 2454.99,
+        "p50": 2000.0,
+        "p95": 3857.0,
+        "min": 2000.0,
+        "max": 4571.0
+      }
+    }
+  },
+  "policy": "Heuristic(all_local)"
+}
