@@ -90,7 +90,8 @@ class EdgeServer(QueueNode):
                     self.queue.append(task)
                 else:
                     self.total_dropped += 1  # CPU queue đầy mới drop
-                    task.is_fallback = True               
+                    task.is_dropped = True
+                    task.done = True               
                     task.finish_time_edge = current_time 
                     task.finish_time = current_time  
                     finished.append(task)                 # Ném task ra ngoài để gọi hàm update() phạt AI

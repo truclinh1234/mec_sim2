@@ -14,23 +14,20 @@ def main():
     os.makedirs("results", exist_ok=True)
     
     # Ta test ở Rate = 1 (rất thong thả) để đo độ trễ chuẩn của 1 DAG
-    test_rates = [0.5, 1.0, 3.0, 5.0, 7.0, 9.0, 10.0, 15.0]
-    
-    # 3 chiến lược: Ở nhà hết, Đẩy đi hết, Nửa nạc nửa mỡ
-    
-
-    print("\n" + "="*85)
-    print(f"| {'Rate':^6} | {'Policy':^20} | {'Tổng Task':^15} | {'Tổng DAG':^12} | {'Độ Trễ TB (ms)':^16} |")
-    print("-" * 85)
+    test_rates = [0.5, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 15.0, 20.0]
+   
+    print("\n" + "="*98)
+    print(f"| {'Rate':^6} | {'Policy':^20} | {'Tổng Task':^15} | {'Tổng DAG':^12} | {'Dropped':^9} | {'Độ Trễ TB (ms)':^16} |")
+    print("-" * 98)
 
     for rate in test_rates:
         policies_to_test = [
         ("AllLocal", HeuristicPolicy(mode="all_local")),
         ("AllEdge0", HeuristicPolicy(mode="all_edge", edge_id=0)),
-        # ("TypeAware", HeuristicPolicy(mode="type_aware")),   
+        ("TypeAware", HeuristicPolicy(mode="type_aware")),   
         # ("MAB_NoContext", StandardEpsGreedyPolicy(epsilon=0.1)),
-        # ("EpsGreedy_Ctx", EpsGreedyPolicy(epsilon=0.1, deadline_ms=500.0)),
-        ("LinUCB", UCBPolicy(alpha=0.1, deadline_ms=500.0, min_pulls=10))
+        ("EpsGreedy_Ctx", EpsGreedyPolicy(epsilon=0.1, deadline_ms=3000.0)),
+        ("LinUCB", UCBPolicy(alpha=0.1, deadline_ms=3000.0, min_pulls=10))
     ]
         for run_name, policy in policies_to_test:
             run_id = f"DAG_{run_name}_Rate{rate}"
@@ -38,7 +35,7 @@ def main():
             random.seed(cfg.RANDOM_SEED)
             np.random.seed(cfg.RANDOM_SEED)
             
-            env = MecEnv(seed=cfg.RANDOM_SEED, enable_interference=False)
+            env = MecEnv(seed=cfg.RANDOM_SEED, enable_interference=True)
             ctrl = Controller(policy=policy)
             
             env.reset()
@@ -48,8 +45,12 @@ def main():
             next_job_id = 1
 
             while not env.done:
-                # 1. Sinh DAGJob mới
-                arrival_acc += rate * cfg.DT
+                # 1. Sinh DAGJob mới — CHỈ TRONG 60 GIÂY ĐẦU
+                if env.sim_time < getattr(cfg, 'TASK_GEN_DURATION', 60.0):
+                    arrival_acc += rate * cfg.DT
+                else:
+                    arrival_acc = 0  # Ngừng ném task, chỉ đợi xử lý nốt hàng đợi
+                    
                 n_arrivals = int(arrival_acc)
                 arrival_acc -= n_arrivals
                 
@@ -83,6 +84,10 @@ def main():
                         if job and not job.is_completed:
                             unlocked_tasks = job.update_task_completion(task.task_id, env.sim_time)
                             dag_tasks_to_schedule.extend(unlocked_tasks)
+                # --- DỪNG SỚM NẾU TẤT CẢ ĐÃ XONG ---
+                if env.sim_time >= getattr(cfg, 'TASK_GEN_DURATION', 60.0):
+                    if all(j.is_completed for j in active_jobs.values()):
+                        break
 
                         # --- TỔNG KẾT VÀ TÍNH ĐỘ TRỄ ---
             completed_dags = [j for j in active_jobs.values() if j.is_completed]
@@ -98,10 +103,22 @@ def main():
             dag_ratio_str = f"{total_dags} / {len(active_jobs)}"
             
             # In dòng kết quả (chỉ thêm .2f vào biến rate)
-            print(f"| {rate:^6.2f} | {run_name:<20} | {task_ratio_str:^15} | {dag_ratio_str:^12} | {avg_dag_lat:>12.2f} ms |")
+            # --- TÍNH SỐ LƯỢNG DROP ---
+            dropped_count = len(getattr(env, 'dropped_tasks', []))
+            
+            print(f"| {rate:^6.2f} | {run_name:<20} | {task_ratio_str:^15} | {dag_ratio_str:^12} | {dropped_count:^9} | {avg_dag_lat:>12.2f} ms |")
+            import json
+            summary_data = {
+                "total_done": total_dags,
+                "total_generated": len(active_jobs),
+                "latency_all_ms": {"mean": avg_dag_lat}
+            }
+            json_filename = f"results/Baseline_{run_name}_Rate{rate}_summary.json"
+            with open(json_filename, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f)
         if rate != test_rates[-1]:
-            print("-" * 85)
-    print("="*85)
+            print("-" * 98)
+    print("="*98)
 
 if __name__ == "__main__":
     main()

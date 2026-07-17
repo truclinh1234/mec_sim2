@@ -14,30 +14,30 @@ def create_linear_dag(job_id: int, user_id: int, arrival_time: float) -> DAGJob:
 
     # Khối 0: DAG HỖN HỢP (Dùng để chứng minh sức mạnh của TypeAware Policy)
     task_configs = [
-        # {"name": "Light",  "cycles": 3e8, "input_bits": 1e6},
-        # {"name": "Medium", "cycles": 1e9, "input_bits": 5e6},
-        # {"name": "Heavy",  "cycles": 2e9, "input_bits": 20e6}
+        {"name": "Light",  "cycles": 3e8, "input_bits": 1e6},
+        {"name": "Medium", "cycles": 1e9, "input_bits": 5e6},
+        {"name": "Heavy",  "cycles": 2e9, "input_bits": 20e6}
     ]
 
     # Khối 1: DAG toàn Light (Bỏ comment khi muốn chạy Ablation Study)
-    task_configs = [
-        {"name": "Light", "cycles": 3e8, "input_bits": 1e6},
-        {"name": "Light", "cycles": 3e8, "input_bits": 1e6},
-        {"name": "Light", "cycles": 3e8, "input_bits": 1e6}
-    ]
+    # task_configs = [
+    #     {"name": "Light", "cycles": 3e8, "input_bits": 1e6},
+        # {"name": "Light", "cycles": 3e8, "input_bits": 1e6},
+        # {"name": "Light", "cycles": 3e8, "input_bits": 1e6}
+    # ]
 
     # Khối 2: DAG toàn Medium (Bỏ comment khi muốn chạy Ablation Study)
     # task_configs = [
     #     {"name": "Medium", "cycles": 1e9, "input_bits": 5e6},
-    #     {"name": "Medium", "cycles": 1e9, "input_bits": 5e6},
-    #     {"name": "Medium", "cycles": 1e9, "input_bits": 5e6}
+        # {"name": "Medium", "cycles": 1e9, "input_bits": 5e6},
+        # {"name": "Medium", "cycles": 1e9, "input_bits": 5e6}
     # ]
 
     # Khối 3: DAG toàn Heavy (Bỏ comment khi muốn chạy Ablation Study)
     # task_configs = [
-    #     {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6},
-    #     {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6},
-    #     {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6}
+        # {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6},
+        # {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6},
+        # {"name": "Heavy", "cycles": 2e9, "input_bits": 20e6}
     # ]
     
     # 1. Khởi tạo tasks

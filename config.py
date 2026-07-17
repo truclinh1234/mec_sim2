@@ -36,7 +36,8 @@ CHANNEL_MODEL = 'shared'
 PROPAGATION_DELAY = 0.002  # 2 ms
 
 # ── SIMULATION ────────────────────────────────────────────────────────────────
-SIM_DURATION = 60.0    # Tổng thời gian mô phỏng (giây)
+SIM_DURATION = 3600.0    # Tổng thời gian mô phỏng (giây)
+TASK_GEN_DURATION = 60.0      # Thời gian chỉ định để ném task mới
 DT           = 0.001    # Time step (giây)
 RANDOM_SEED  = 42      # Seed cho tái lập kết quả
 

@@ -54,7 +54,7 @@ class StandardEpsGreedyPolicy:
        
         # 1. Báo cáo Tốt (Xong DAG) và Xấu (Kẹt xe)
         is_last_task = (task.job_id is not None) and (len(task.successors) == 0)
-        fallback_happened = getattr(task, 'is_fallback', False)
+        is_dropped = getattr(task, 'is_dropped', False)
         
         # 1. Kiểm tra xem đây có phải là Task cuối cùng của DAG không
         is_last_task = (task.job_id is not None) and (len(task.successors) == 0)
@@ -65,7 +65,7 @@ class StandardEpsGreedyPolicy:
         # 3. Thêm Bonus nếu là task cuối DAG
         reward_bonus = 10.0 if is_last_task else 0.0
         
-        reward_penalty = -10.0 if fallback_happened else 0.0
+        reward_penalty = -10.0 if is_dropped else 0.0
         # 4. reward tổng
         reward = reward_latency + reward_bonus + reward_penalty 
 

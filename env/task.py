@@ -38,6 +38,7 @@ class Task:
     offloaded:   bool  = False
     edge_id:     Optional[int] = None
     split_ratio: float = 0.0   
+    is_dropped:  bool  = False
 
     # ── Workload split ───────────────────────────────────────────────────────
     cycles_local: float = 0.0
